@@ -6,6 +6,10 @@ export type SentimentScore = number; // -1 to 1
 
 export interface Submission {
   id: string;
+  citizenName?: string;
+  department?: string;
+  phoneNumber?: string;
+  photos?: string[];
   text: string;
   domain: PolicyDomain;
   coreIssue: string;
@@ -46,10 +50,38 @@ export interface ActivityItem {
   domain?: PolicyDomain;
 }
 
-const locations = [
-  "Bengaluru Urban", "Bengaluru Rural", "Mysuru", "Mangaluru", "Hubli-Dharwad",
-  "Belagavi", "Kalaburagi", "Davanagere", "Tumakuru", "Shivamogga",
-  "Raichur", "Hassan", "Udupi", "Chitradurga", "Mandya"
+export const locations = [
+  "Bagalkote",
+  "Ballari (Bellary)",
+  "Belagavi (Belgaum)",
+  "Bengaluru Rural",
+  "Bengaluru South",
+  "Bengaluru Urban",
+  "Bidar",
+  "Chamarajanagara",
+  "Chikkaballapura",
+  "Chikkamagaluru",
+  "Chitradurga",
+  "Dakshina Kannada",
+  "Davanagere",
+  "Dharwad",
+  "Gadag",
+  "Hassan",
+  "Haveri",
+  "Kalaburagi (Gulbarga)",
+  "Kodagu",
+  "Kolar",
+  "Koppal",
+  "Mandya",
+  "Mysuru (Mysore)",
+  "Raichur",
+  "Ramanagara",
+  "Shivamogga",
+  "Tumakuru",
+  "Udupi",
+  "Uttara Kannada",
+  "Vijayapura (Bijapur)",
+  "Vijayanagara",
 ];
 
 const now = new Date();

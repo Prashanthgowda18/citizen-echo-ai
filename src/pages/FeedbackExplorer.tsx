@@ -1,11 +1,14 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, type ChangeEvent } from "react";
 import { useAppState } from "@/contexts/AppContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Search } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import type { CitizenFeedbackInput } from "@/lib/feedbackAnalysis";
 import type { Submission, PolicyDomain } from "@/data/demoData";
 
 const domains: PolicyDomain[] = ["Infrastructure", "Healthcare", "Education", "Environment", "Public Safety", "Housing"];
@@ -18,10 +21,82 @@ const urgencyColors: Record<string, string> = {
 };
 
 export default function FeedbackExplorer() {
-  const { submissions } = useAppState();
+  const { submissions, addSubmissionsFromCsv } = useAppState();
   const [search, setSearch] = useState("");
   const [domainFilter, setDomainFilter] = useState<string>("all");
   const [selected, setSelected] = useState<Submission | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const parseCsv = (csvText: string): CitizenFeedbackInput[] => {
+    const lines = csvText.split(/\r?\n/).filter((line) => line.trim());
+    if (lines.length < 2) return [];
+
+    const parseLine = (line: string): string[] => {
+      const tokens: string[] = [];
+      let current = "";
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          inQuotes = !inQuotes;
+          continue;
+        }
+        if (char === "," && !inQuotes) {
+          tokens.push(current.trim());
+          current = "";
+          continue;
+        }
+        current += char;
+      }
+
+      tokens.push(current.trim());
+      return tokens;
+    };
+
+    const headers = parseLine(lines[0]).map((h) => h.toLowerCase());
+    const get = (row: string[], keys: string[]) => {
+      for (const key of keys) {
+        const index = headers.indexOf(key);
+        if (index >= 0) return row[index] ?? "";
+      }
+      return "";
+    };
+
+    return lines.slice(1).map((line) => {
+      const row = parseLine(line);
+      return {
+        citizenName: get(row, ["name", "citizen_name", "citizen"]),
+        text: get(row, ["feedback", "feedback_text", "text", "message"]),
+        department: get(row, ["department", "dept"]),
+        phoneNumber: get(row, ["phone", "phone_number", "mobile", "contact"]),
+        location: get(row, ["location", "district", "city"]),
+        date: get(row, ["date", "submitted_date"]) || new Date().toISOString().split("T")[0],
+      };
+    }).filter((row) => row.text.trim());
+  };
+
+  const handleCsvUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const text = await file.text();
+      const rows = parseCsv(text);
+      const imported = addSubmissionsFromCsv(rows);
+      if (!imported) {
+        toast({ title: "No valid rows", description: "CSV did not contain feedback rows to import.", variant: "destructive" });
+      } else {
+        toast({ title: "CSV uploaded", description: `${imported} feedback entries imported for admin analysis.` });
+      }
+    } catch {
+      toast({ title: "Upload failed", description: "Could not parse the CSV file.", variant: "destructive" });
+    } finally {
+      setUploading(false);
+      event.target.value = "";
+    }
+  };
 
   const filtered = useMemo(() => {
     return submissions.filter(s => {
@@ -37,6 +112,19 @@ export default function FeedbackExplorer() {
         <h1 className="text-3xl font-bold tracking-tight">Feedback Explorer</h1>
         <p className="text-muted-foreground mt-1">Browse and search all citizen submissions</p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Admin CSV Import</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">Upload a CSV with columns such as name, feedback, department, location, and date.</p>
+          <div className="flex items-center gap-3">
+            <Input type="file" accept=".csv,text/csv" onChange={handleCsvUpload} disabled={uploading} className="max-w-md" />
+            <Button variant="outline" disabled>{uploading ? "Importing..." : "Ready"}</Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="flex gap-3">
         <div className="relative flex-1 max-w-md">
@@ -94,6 +182,9 @@ export default function FeedbackExplorer() {
               <div className="space-y-4">
                 <p className="text-sm leading-relaxed">{selected.text}</p>
                 <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div><span className="text-muted-foreground">Name:</span> <span className="ml-1">{selected.citizenName || "Anonymous"}</span></div>
+                  <div><span className="text-muted-foreground">Department:</span> <span className="ml-1">{selected.department || "Not specified"}</span></div>
+                  <div><span className="text-muted-foreground">Phone:</span> <span className="ml-1">{selected.phoneNumber || "Not specified"}</span></div>
                   <div><span className="text-muted-foreground">Domain:</span> <Badge variant="outline" className="ml-1 text-[10px]">{selected.domain}</Badge></div>
                   <div><span className="text-muted-foreground">Core Issue:</span> <span className="ml-1">{selected.coreIssue}</span></div>
                   <div><span className="text-muted-foreground">Urgency:</span> <span className={`ml-1 ${urgencyColors[selected.urgency]}`}>{selected.urgency}</span></div>
@@ -104,6 +195,29 @@ export default function FeedbackExplorer() {
                 <div className="flex gap-1 flex-wrap">
                   {selected.keywords.map(k => <Badge key={k} className="text-[10px]">{k}</Badge>)}
                 </div>
+                {selected.photos && selected.photos.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium">Attached Photos</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {selected.photos.map((photo, index) => (
+                        <a
+                          key={`${photo}-${index}`}
+                          href={photo}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded border overflow-hidden"
+                        >
+                          <img
+                            src={photo}
+                            alt={`Submission evidence ${index + 1}`}
+                            className="h-28 w-full object-cover"
+                            loading="lazy"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}
